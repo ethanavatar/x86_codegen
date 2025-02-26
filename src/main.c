@@ -9,19 +9,17 @@
 #define IMAGE_BASE  (0x400000)
 
 uint32_t imp_exit;
-uint32_t imp_scanf;
-uint32_t imp_printf;
 
 inline static void write_i32(int8_t *buffer, int32_t value) {
     ((int32_t *) buffer)[0] = value;
 }
 
-int32_t padding(int32_t amount, int32_t padding) {
-	if (amount % padding == 0) {
-		return 0;
-	}
-
-	return padding - amount % padding;
+inline static int32_t padding(int32_t amount, int32_t padding) {
+    if (amount % padding == 0) {
+    	return 0;
+    }
+    
+    return padding - amount % padding;
 }
 
 inline static size_t write_padding(FILE *fp, size_t padding_bytes) {
@@ -43,27 +41,13 @@ int main(void) {
         write_i32(&imports[16], TEXT_BASE + 40); // first thunk
 
         write_i32(&imports[40], TEXT_BASE + 67);
-        write_i32(&imports[44], TEXT_BASE + 74);
-        write_i32(&imports[48], TEXT_BASE + 82);
 
-        memcpy(&imports[56], "msvcrt.dll\x00",     sizeof("msvcrt.dll\x00"));
-
-        //
-        //memset(&imports[67], 0, sizeof("\x00\x00exit\x00"));
-        memcpy(&imports[69], "exit", sizeof("exit"));
-        //
-
-        memcpy(&imports[74], "\x00\x00scanf\x00",  sizeof("\x00\x00scanf\x00"));
-        memcpy(&imports[82], "\x00\x00printf\x00", sizeof("\x00\x00printf\x00"));
+        memcpy(&imports[56], "msvcrt.dll\x00", sizeof("msvcrt.dll\x00"));
+        memcpy(&imports[67 + 2], "exit", sizeof("exit"));
         memcpy(&imports[91], "%d\x00",             sizeof("%d\x00"));
         memcpy(&imports[94], "%d\n\x00",           sizeof("%d\n\x00"));
 
         imp_exit   = IMAGE_BASE + TEXT_BASE + 40;
-        imp_scanf  = IMAGE_BASE + TEXT_BASE + 44;
-        imp_printf = IMAGE_BASE + TEXT_BASE + 48;
-
-        //s_fmt_addr = IMAGE_BASE + TEXT_BASE + 91;
-        //p_fmt_addr = IMAGE_BASE + TEXT_BASE + 94;
     }
 
     int32_t code_bytes = 0;
@@ -72,15 +56,13 @@ int main(void) {
     memcpy(&code[0], &imports[0], sizeof(char) * IMPORT_SIZE);
     code_bytes += sizeof(char) * IMPORT_SIZE;
 
-    {
+    { // program
+
         // ret
         code[code_bytes++] = 0xc3;
     }
 
     int32_t entry_point_address = TEXT_BASE + IMPORT_SIZE + (code_bytes - sizeof(char) * IMPORT_SIZE);
-    fprintf(stderr, "TEXT_BASE:   %d (%X)\n", TEXT_BASE, TEXT_BASE);
-    fprintf(stderr, "IMPORT_SIZE: %d (%X)\n", IMPORT_SIZE, IMPORT_SIZE);
-    fprintf(stderr, "entry_point: %d (%X)\n", entry_point_address, entry_point_address);
 
     { // exit
 
@@ -107,9 +89,9 @@ int main(void) {
     int32_t code_segment_length  = code_bytes + code_segment_padding;
 
     // DOS header
-	bytes_written += fwrite("MZ", sizeof(char), 2, fp);
-	bytes_written += write_padding(fp, 58); // skip loads of crap
-	bytes_written += fwrite("\x40\x00\x00\x00", sizeof(char), 4, fp);
+    bytes_written += fwrite("MZ", sizeof(char), 2, fp);
+    bytes_written += write_padding(fp, 58); // skip loads of crap
+    bytes_written += fwrite("\x40\x00\x00\x00", sizeof(char), 4, fp);
 
     struct PE_File_Header header = {
         .magic   = "PE\x00\x00",
@@ -122,10 +104,9 @@ int main(void) {
             | IMAGE_FILE_RELOCS_STRIPPED
             | IMAGE_FILE_LINE_NUMS_STRIPPED
             | IMAGE_FILE_LOCAL_SYMS_STRIPPED,
-	};
-    //memset(&header, 0xFF, sizeof(struct PE_File_Header));
-
-	bytes_written += fwrite(&header, sizeof(char), sizeof(struct PE_File_Header), fp);
+    };
+    
+    bytes_written += fwrite(&header, sizeof(char), sizeof(struct PE_File_Header), fp);
 
     struct Optional_Header_32 optional_header = {
         .magic = OPTIONAL_HEADER_MAGIC_PE32,
@@ -165,24 +146,22 @@ int main(void) {
 	bytes_written += fwrite(&optional_header, sizeof(char), sizeof(struct Optional_Header_32), fp);
 
     struct Section_Header_32 section_header = {
-		.name = ".blaise\x00",
-		.virtual_size    = code_segment_length,
-		.virtual_address = TEXT_BASE,
-
-		.size_of_raw_data    = code_segment_length,
-		.pointer_to_raw_data = 512,
-
-		.characteristics = IMAGE_SCN_ALIGN_16BYTES
+    	.name = ".blaise\x00",
+    	.virtual_size    = code_segment_length,
+    	.virtual_address = TEXT_BASE,
+    
+    	.size_of_raw_data    = code_segment_length,
+    	.pointer_to_raw_data = 512,
+    
+    	.characteristics = IMAGE_SCN_ALIGN_16BYTES
             | IMAGE_SCN_MEM_EXECUTE
             | IMAGE_SCN_MEM_READ
             | IMAGE_SCN_MEM_WRITE,
-	};
+    };
 
-	bytes_written += fwrite(&section_header, sizeof(char), sizeof(struct Section_Header_32), fp);
+    bytes_written += fwrite(&section_header, sizeof(char), sizeof(struct Section_Header_32), fp);
     size_t section_padding = padding(bytes_written, 512);
     bytes_written += write_padding(fp, section_padding);
-
-    fprintf(stderr, "padded with %zu bytes. code should be at byte %zu (%d)\n", section_padding, bytes_written, code_segment_length);
 
     bytes_written += fwrite(&code[0], sizeof(char), code_bytes, fp);
     bytes_written += write_padding(fp, code_segment_padding);
