@@ -69,16 +69,27 @@ int main(void) {
     int32_t code_bytes = 0;
     char code[512] = { 0 };
 
-	memcpy(&code[0], &imports[0], sizeof(char) * IMPORT_SIZE);
+    memcpy(&code[0], &imports[0], sizeof(char) * IMPORT_SIZE);
     code_bytes += sizeof(char) * IMPORT_SIZE;
 
     {
+        // ret
+        code[code_bytes++] = 0xc3;
+    }
+
+    int32_t entry_point_address = TEXT_BASE + IMPORT_SIZE + (code_bytes - sizeof(char) * IMPORT_SIZE);
+    fprintf(stderr, "TEXT_BASE:   %d (%X)\n", TEXT_BASE, TEXT_BASE);
+    fprintf(stderr, "IMPORT_SIZE: %d (%X)\n", IMPORT_SIZE, IMPORT_SIZE);
+    fprintf(stderr, "entry_point: %d (%X)\n", entry_point_address, entry_point_address);
+
+    { // exit
+
         // push 0x2a
         // call DWORD PTR ds:imp_exit
         // add ESP, 0x4
 
         code[code_bytes++] = 0x6a;
-        code[code_bytes++] = 0x00; // exit code
+        code[code_bytes++] = 69; // exit code
 
         code[code_bytes++] = 0xff;
         code[code_bytes++] = 0x15;
@@ -92,11 +103,8 @@ int main(void) {
         code[code_bytes++] = 0x04;
     }
 
-    int32_t entry_point_address = TEXT_BASE + IMPORT_SIZE + code_bytes;
-    fprintf(stderr, "code_bytes: %d, entry_point: %0X\n", code_bytes, entry_point_address);
-
     int32_t code_segment_padding = padding(code_bytes, 512);
-	int32_t code_segment_length  = code_bytes + code_segment_padding;
+    int32_t code_segment_length  = code_bytes + code_segment_padding;
 
     // DOS header
 	bytes_written += fwrite("MZ", sizeof(char), 2, fp);
@@ -104,11 +112,11 @@ int main(void) {
 	bytes_written += fwrite("\x40\x00\x00\x00", sizeof(char), 4, fp);
 
     struct PE_File_Header header = {
-		.magic   = "PE\x00\x00",
-		.machine = IMAGE_FILE_MACHINE_I386,
-		.number_of_sections = 1,
-		.size_of_optional_header = sizeof(struct Optional_Header_32),
-		.characteristics = IMAGE_FILE_BIT32_MACHINE
+        .magic   = "PE\x00\x00",
+        .machine = IMAGE_FILE_MACHINE_I386,
+        .number_of_sections = 1,
+        .size_of_optional_header = sizeof(struct Optional_Header_32),
+        .characteristics = IMAGE_FILE_BIT32_MACHINE
             | IMAGE_FILE_EXECUTABLE_IMAGE
             | IMAGE_FILE_DEBUG_STRIPPED
             | IMAGE_FILE_RELOCS_STRIPPED
@@ -128,11 +136,11 @@ int main(void) {
         .base_of_data = TEXT_BASE,
         .image_base   = IMAGE_BASE,
 
-        .section_alignment = 4092,
+        .section_alignment = 4096,
         .file_alignment    = 512,
 
-        .major_operating_system_version = 4,
-        .minor_operating_system_version = 0,
+        .major_subsystem_version = 4,
+        .minor_subsystem_version = 0,
 
         .size_of_image = code_segment_length + padding(code_segment_length, 0x1000) + 0x1000,
         .size_of_headers = 512,
@@ -176,7 +184,7 @@ int main(void) {
 
     fprintf(stderr, "padded with %zu bytes. code should be at byte %zu (%d)\n", section_padding, bytes_written, code_segment_length);
 
-	bytes_written += fwrite(&code[0], sizeof(char), code_bytes, fp);
+    bytes_written += fwrite(&code[0], sizeof(char), code_bytes, fp);
     bytes_written += write_padding(fp, code_segment_padding);
 
     fclose(fp);
